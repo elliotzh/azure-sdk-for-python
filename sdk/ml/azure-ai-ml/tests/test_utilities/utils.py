@@ -7,7 +7,9 @@ import os
 import signal
 import tempfile
 import time
+from contextlib import contextmanager
 from typing import Dict, Callable
+from unittest.mock import patch
 from zipfile import ZipFile
 from io import StringIO
 
@@ -308,3 +310,14 @@ def wait_until_done(client: MLClient, job: Job, timeout: int = None) -> str:
             cancel_job(client, job)
             return JobStatus.CANCELED
     return job.status
+
+
+@contextmanager
+def skip_sleep_in_lro_polling(work_only_if_not_live=True):
+    if work_only_if_not_live and is_live():
+        yield
+        return
+
+    from azure.core.polling.base_polling import LROBasePolling
+    with patch.object(LROBasePolling, "_sleep", return_value=None):
+        yield
