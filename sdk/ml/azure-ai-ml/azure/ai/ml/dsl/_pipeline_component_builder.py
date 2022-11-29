@@ -210,8 +210,8 @@ class PipelineComponentBuilder:
         _locals = {}
         func_variable_profiler = get_func_variable_tracer(_locals, self.func.__code__)
         try:
-            with replace_sys_profiler(func_variable_profiler):
-                outputs = self.func(**kwargs)
+            # with replace_sys_profiler(func_variable_profiler):
+            outputs = self.func(**kwargs)
         finally:
             _definition_builder_stack.pop()
 
