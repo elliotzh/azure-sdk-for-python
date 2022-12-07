@@ -80,27 +80,6 @@ class TestPipelineJob(AzureRecordedTestCase):
         assert new_tag_name in updated_job.tags
         assert updated_job.tags[new_tag_name] == new_tag_value
 
-    @pytest.mark.skip("skip as registries not work in canary region for now")
-    def test_pipeline_job_create_with_registries(
-        self,
-        client: MLClient,
-        randstr: Callable[[str], str],
-    ) -> None:
-        params_override = [{"name": randstr("name")}]
-        pipeline_job = load_job(
-            source="./tests/test_configs/pipeline_jobs/hello_pipeline_job_with_registries.yml",
-            params_override=params_override,
-        )
-        assert (
-            pipeline_job.jobs.get("a").environment
-            == "azureml://registries/testFeed/environments/sklearn-10-ubuntu2004-py38-cpu/versions/19.dev6"
-        )
-        job = client.jobs.create_or_update(pipeline_job)
-        assert job.name == params_override[0]["name"]
-        assert (
-            job.jobs.get("a").component == "azureml://registries/testFeed/components/my_hello_world_asset_2/versions/1"
-        )
-
     @pytest.mark.parametrize(
         "pipeline_job_path",
         [
@@ -1327,24 +1306,6 @@ class TestPipelineJob(AzureRecordedTestCase):
         # No job output now, https://msdata.visualstudio.com/Vienna/_workitems/edit/1993701/
         # assert pipeline_dict["outputs"] == {"output_path": {"mode": "ReadWriteMount", "job_output_type": "uri_folder"}}
         assert pipeline_dict["settings"] == {"default_compute": "cpu-cluster", "_source": "REMOTE.WORKSPACE.COMPONENT"}
-
-    @pytest.mark.skip(
-        reason="request body still exits when re-record and will raise error "
-        "'Unable to find a record for the request' in playback mode"
-    )
-    def test_pipeline_job_create_with_registry_model_as_input(
-        self,
-        client: MLClient,
-        registry_client: MLClient,
-        randstr: Callable[[str], str],
-    ) -> None:
-        params_override = [{"name": randstr("name")}]
-        pipeline_job = load_job(
-            source="./tests/test_configs/pipeline_jobs/job_with_registry_model_as_input/pipeline.yml",
-            params_override=params_override,
-        )
-        job = client.jobs.create_or_update(pipeline_job)
-        assert job.name == params_override[0]["name"]
 
     def test_pipeline_node_with_default_component(self, client: MLClient, randstr: Callable[[str], str]):
         params_override = [{"name": randstr("job_name")}]

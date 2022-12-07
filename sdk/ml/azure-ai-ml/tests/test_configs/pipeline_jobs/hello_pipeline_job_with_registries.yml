@@ -6,16 +6,12 @@ compute: azureml:cpu-cluster
 inputs:
   hello_string_top_level_input: "hello world"
 jobs:
-  a:
+  environment_on_registry:
     component: azureml://registries/testFeed/components/my_hello_world_asset_2/versions/1
     environment: azureml://registries/testFeed/environments/sklearn-10-ubuntu2004-py38-cpu/versions/19.dev6
-  b:
-    command: echo "world" >> ${{outputs.world_output}}/world.txt
-    environment: azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu@latest
-    outputs:
-      world_output:
-  c:
-    command: echo ${{inputs.world_input}}/world.txt
-    environment: azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu@latest
-    inputs:
-      world_input: ${{parent.jobs.b.outputs.world_output}}
+  component_on_registry:
+    component: azureml://registries/testFeed/components/sample_command_component_basic/versions/1
+  component_on_registry_via_label:
+    component: azureml://registries/testFeed/components/sample_command_component_basic/labels/latest
+  component_on_registry_via_label_2:
+    component: azureml://registries/testFeed/components/sample_command_component_basic@latest
