@@ -1,13 +1,18 @@
 # ---------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # ---------------------------------------------------------
-import uuid
+import hashlib
+import logging
+import os
 from collections import defaultdict
 from typing import Union, Tuple, List
 
 from azure.ai.ml.constants._common import AzureMLResourceType
 from azure.ai.ml.entities import Component
 from azure.ai.ml.entities._builders import BaseNode
+
+
+logger = logging.getLogger(__name__)
 
 
 class CachedNodeResolver(object):
@@ -42,12 +47,42 @@ class CachedNodeResolver(object):
             # component can be arm string like "train_model:1"
             return cls._ORIGIN_PREFIX + component
 
-        # TODO: add hash function here
-        # for pipeline component, all dependencies of pipeline component has already been resolved
-        # so we can safely use its anonymous hash
-        # for non-pipeline component, we can't directly use anonymous hash as code hasn't been uploaded yet
-        # return a random hash by default
-        return cls._ANONYMOUS_HASH_PREFIX + str(uuid.uuid4())
+        # For components with code, its code will be an absolute path before uploaded to blob,
+        # so we can use a mixture of its anonymous hash and its source path as its hash, in case
+        # there are 2 components with same code but different ignore files
+        # Here we can check if the component has a source path instead of check if it has code, as
+        # there is no harm to add a source path to the hash even if the component doesn't have code
+        # Note that here we assume that the content of code folder won't change during the submission
+        if component._source_path:  # pylint: disable=protected-access
+            object_hash = hashlib.sha224()
+            object_hash.update(component._get_anonymous_hash().encode("utf-8"))  # pylint: disable=protected-access
+            object_hash.update(component._source_path.encode("utf-8"))  # pylint: disable=protected-access
+            return cls._YAML_SOURCE_PREFIX + object_hash.hexdigest()
+        # For components without code, like pipeline component, their dependencies have already
+        # been resolved before calling this function, so we can use their anonymous hash directly
+        return cls._ANONYMOUS_HASH_PREFIX + component._get_anonymous_hash()  # pylint: disable=protected-access
+
+    @classmethod
+    def _get_component_registration_max_workers(cls):
+        # Before Python 3.8, the default max_worker is the number of processors multiplied by 5.
+        # It may send a large number of the uploading snapshot requests that will occur remote refuses requests.
+        # In order to avoid retrying the upload requests, max_worker will use the default value in Python 3.8,
+        # min(32, os.cpu_count + 4).
+        max_workers_env_var = 'AML_COMPONENT_REGISTRATION_MAX_WORKER'
+        default_max_workers = min(32, (os.cpu_count() or 1) + 4)
+        try:
+            max_workers = int(os.environ.get(max_workers_env_var, default_max_workers))
+        except ValueError:
+            logger.info(
+                "Environment variable %s with value %s set but failed to parse. "
+                "Use the default max_worker %s as registration thread pool max_worker."
+                "Please reset the value to an integer.",
+                max_workers_env_var,
+                os.environ.get(max_workers_env_var),
+                default_max_workers
+            )
+            max_workers = default_max_workers
+        return max_workers
 
     def register_node_to_resolve(self, node: BaseNode):
         """Register a node with its component to resolve.
@@ -73,8 +108,11 @@ class CachedNodeResolver(object):
         # TODO: do concurrent resolution controlled by an environment variable here
         # given deduplication has already been done, we can safely assume that there is no
         # conflict in concurrent local cache access
-        # multiprocessing need to dump input objects before starting a new process, which will fail
-        # on _AttrDict for now, so put off the concurrent resolution
+        # pool = multiprocessing.Pool(self._get_component_registration_max_workers())
+        # results = pool.map(self._resolve_component, [component for _, component in self._components_to_resolve])
+        # for (component_hash, component), result in zip(self._components_to_resolve, results):
+        #     self._component_resolution_cache[component_hash] = result
+
         for component_hash, component in self._components_to_resolve:
             self._component_resolution_cache[component_hash] = self._resolve_component(component)
 
