@@ -27,7 +27,6 @@ class CachedNodeResolver(object):
     """
     _ANONYMOUS_HASH_PREFIX = "anonymous_component:"
     _YAML_SOURCE_PREFIX = "yaml_source:"
-    _ORIGIN_PREFIX = "origin:"
 
     def __init__(self, resolver):
         self._resolver = resolver
@@ -49,8 +48,9 @@ class CachedNodeResolver(object):
         # Here we can check if the component has a source path instead of check if it has code, as
         # there is no harm to add a source path to the hash even if the component doesn't have code
         # Note that here we assume that the content of code folder won't change during the submission
+        # TODO: calculate hash based on content instead of path for local cache
         if component._source_path:  # pylint: disable=protected-access
-            object_hash = hashlib.sha224()
+            object_hash = hashlib.sha256()
             object_hash.update(component._get_anonymous_hash().encode("utf-8"))  # pylint: disable=protected-access
             object_hash.update(component._source_path.encode("utf-8"))  # pylint: disable=protected-access
             return cls._YAML_SOURCE_PREFIX + object_hash.hexdigest()
