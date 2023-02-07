@@ -123,8 +123,11 @@ class InternalComponentSchema(ComponentSchema):
                 origin_data = yaml_safe_load_with_base_resolver(f)
                 dot_keys = ["version"]
                 for input_key in data.get("inputs", {}).keys():
+                    input_type = data["inputs"][input_key].get("type", None)
+                    if not isinstance(input_type, str) or input_type.lower() not in ["string", "enum"]:
+                        continue
                     # Keep value in float input as string to avoid precision issue.
-                    for attr_name in ["default", "enum", "min", "max"]:
+                    for attr_name in ["default", "enum"]:
                         dot_keys.append(f"inputs.{input_key}.{attr_name}")
 
                 for dot_key in dot_keys:
