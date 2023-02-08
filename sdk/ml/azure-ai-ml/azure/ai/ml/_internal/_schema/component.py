@@ -46,6 +46,49 @@ class NodeType:
         return all_values
 
 
+def get_all_valid_dot_keys(left_reversed_parts, validate_func, root, *, cur_node=None, processed_parts=None):
+    if len(left_reversed_parts) == 0:
+        if validate_func(root, processed_parts):
+            return [".".join(processed_parts)]
+        return []
+
+    if cur_node is None:
+        cur_node = root
+    if not isinstance(cur_node, dict):
+        return []
+    if processed_parts is None:
+        processed_parts = []
+
+    key: str = left_reversed_parts.pop()
+    result = []
+    if key == "*":
+        for next_key in cur_node:
+            if not isinstance(next_key, str):
+                continue
+            processed_parts.append(next_key)
+            result.extend(get_all_valid_dot_keys(
+                left_reversed_parts,
+                validate_func,
+                root,
+                cur_node=cur_node[next_key],
+                processed_parts=processed_parts)
+            )
+            processed_parts.pop()
+    elif key in cur_node:
+        processed_parts.append(key)
+        result = get_all_valid_dot_keys(
+            left_reversed_parts,
+            validate_func,
+            root,
+            cur_node=cur_node[key],
+            processed_parts=processed_parts
+        )
+        processed_parts.pop()
+
+    left_reversed_parts.append(key)
+    return result
+
+
 class InternalComponentSchema(ComponentSchema):
     class Meta:
         unknown = INCLUDE
@@ -118,20 +161,26 @@ class InternalComponentSchema(ComponentSchema):
     def add_param_overrides(self, data, **kwargs):
         source_path = self.context.pop(SOURCE_PATH_CONTEXT_KEY, None)
         if isinstance(data, dict) and source_path and os.path.isfile(source_path):
+            def should_node_overwritten(_root, _parts):
+                parts = _parts.copy()
+                parts.pop()
+                parts.append("type")
+                _input_type = pydash.get(_root, parts, None)
+                return isinstance(_input_type, str) and _input_type.lower() not in ["boolean"]
+
             # do override here
             with open(source_path, "r") as f:
                 origin_data = yaml_safe_load_with_base_resolver(f)
-                dot_keys = ["version"]
-                for input_key in data.get("inputs", {}).keys():
-                    input_type = data["inputs"][input_key].get("type", None)
-                    if not isinstance(input_type, str) or input_type.lower() not in ["string", "enum"]:
-                        continue
-                    # Keep value in float input as string to avoid precision issue.
-                    for attr_name in ["default", "enum"]:
-                        dot_keys.append(f"inputs.{input_key}.{attr_name}")
-
-                for dot_key in dot_keys:
-                    if pydash.has(data, dot_key) and pydash.has(origin_data, dot_key):
+                for wild_dot_key, condition_func in [
+                    ("version", lambda _root, _parts: True),
+                    ("inputs.*.default", should_node_overwritten),
+                    ("inputs.*.enum", should_node_overwritten),
+                ]:
+                    for dot_key in get_all_valid_dot_keys(
+                        wild_dot_key.split(".")[::-1],
+                        condition_func,
+                        origin_data,
+                    ):
                         pydash.set_(data, dot_key, pydash.get(origin_data, dot_key))
         return super().add_param_overrides(data, **kwargs)
 
